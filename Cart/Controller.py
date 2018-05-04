@@ -1,18 +1,23 @@
 from gps3 import agps3threaded as gps
 from collections import deque
 from collections import namedtuple
+import socket
+import pickle
 import time
+import threading
+import Adafruit_BBIO.GPIO as GPIO
 import Adafruit_BBIO.ADC as ADC
 import Adafruit_BBIO.PWM as PWM
 import Adafruit_GPIO.I2C as I2C
 
-
 class Controller(object):
     def __init__(self,GPSPath):
         self.running = True
+        self.serv = threading.Thread(target=_network)
+        self.serv.start()
         self.GPSPath = GPSPath
         self.MODES = {'MANUAL':self.manualStep,'ASSIST':self.assistStep}
-        self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'STOP':self.quit}
+        self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'NEW_PATH_R':self.changePathR,'STOP':self.quit}
         self.mode = 'MANUAL'
         self.motorpins = ('P9_14','P9_16')
         self.accel_pin = ('AIN5')
@@ -28,13 +33,13 @@ class Controller(object):
         self.INTERRUPTS = deque(list())
 
     def run(self):
-        t0 = time.time()
+        self.t0 = time.time()
         while self.running:
-            for interrupt in self.INTERRUPTS:
-                handleInterrupt(interrupt)
+            if len(self.INTERRUPTS) > 0:
+                handleInterrupt(self.INTERRUPTS.popleft())
             t1 = time.time()
             self.MODES[self.mode](time.time() - t0)
-            t0 = t1
+            self.t0 = t1
 
     def manualStep(self,deltaTime):
         userRequested = ADC.read(self.accel_pin)
@@ -59,7 +64,8 @@ class Controller(object):
 
     def quit(args):
         running = False
-        GPS.stop()
+        self.GPS.stop()
+        self.serv.stop()
 
     def handleInterrupt(interrupt):
         cmd,args = interrupt
@@ -69,7 +75,25 @@ class Controller(object):
         mode = MODES[args]
 
     def changePath(args):
-        GPSPath = args
+        self.GPSPath = args
+        self.t0 = 0
+
+    def changePathR(args):
+        cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
+        self.GPSPath = GPSPath(args,offset=cur_pos)
+        self.t0 = 0
+
+    def _network(self):
+        serv = socket.socket()
+        serv.bind(('',4440))
+        cli,cli_addr = serv.accept()
+        while True:
+            pickled_data = cli.recv(1024)
+            if pickled_data = '':
+                cli,cli_addr = serv.accept()
+                continue
+            self.INTERRUPTS.append(pickle.loads(pickled_data))
+
 
 class ADXL(object):
     def __init__(self):
@@ -90,5 +114,5 @@ class ADXL(object):
     def accelData(self):
         raw_data = adxl.readList(self.ADXL_DAT,self.ADXL_TO_READ)
         data = (int(raw_data[1] << 8 | raw_data[0]),int(raw_data[3] << 8 | raw_data[2]),int(raw_data[5] << 8 | raw_data[4]))
-        data = (data[0] - (data[0] >> 15) * 65536 * ADXL_SENS * 32.2,data[1] - (data[1] >> 15) * 65536 * ADXL_SENS * 32.2,data[2] - (data[2] >> 15) * 65536 * ADXL_SENS * 32.2)
+        data = ((data[0] - (data[0] >> 15) * 65536) * ADXL_SENS * 32.2,(data[1] - (data[1] >> 15) * 65536) * ADXL_SENS * 32.2,(data[2] - (data[2] >> 15) * 65536) * ADXL_SENS * 32.2)
         return data

@@ -4,8 +4,9 @@ from collections import namedtuple
 import math
 
 class GPSPath(object):
-    def __init__(self,waypoints,tol=0.000015):
-    	self.waypoints = waypoints
+    def __init__(self,waypoints,offset=(0,0),tol=0.000015):
+        for lat,lon,time in waypoints:
+            self.waypoints.append((lat+offset[0],lon+offset[1],time))
     	self.pathTime = 0
         self.trackTime = 0
         self.tol = tol
@@ -41,6 +42,7 @@ class GPSPath(object):
 
     def pathDeviation(pos):
         return abs(getVectorTo(pos,trackTime))
+
     #Return the time corresponding to the position that is nearest to GPSInfo along
     #the path.
     def closestPathTime(pos):
