@@ -41,7 +41,8 @@ class GPSPath(object):
         return Vector(pos,current_pos.end)
 
     def pathDeviation(pos):
-        return abs(getVectorTo(pos,trackTime))
+        vec = getVectorTo(pos,trackTime)
+        return (abs(vec),vec.absAngle())
 
     #Return the time corresponding to the position that is nearest to GPSInfo along
     #the path.
