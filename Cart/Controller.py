@@ -13,8 +13,8 @@ import Adafruit_GPIO.I2C as I2C
 class Controller(object):
     def __init__(self,GPSPath):
         self.running = True
-        self.serv = threading.Thread(target=_network)
-        self.serv.start()
+        self.server = threading.Thread(target=self._network)
+        self.server.start()
         self.GPSPath = GPSPath
         self.MODES = {'MANUAL':self.manualStep,'ASSIST':self.assistStep}
         self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'NEW_PATH_R':self.changePathR,'STOP':self.quit}
@@ -65,7 +65,7 @@ class Controller(object):
     def quit(args):
         running = False
         self.GPS.stop()
-        self.serv.stop()
+        self.server.stop()
 
     def handleInterrupt(interrupt):
         cmd,args = interrupt
@@ -89,7 +89,7 @@ class Controller(object):
         cli,cli_addr = serv.accept()
         while True:
             pickled_data = cli.recv(1024)
-            if pickled_data = '':
+            if pickled_data == '':
                 cli,cli_addr = serv.accept()
                 continue
             self.INTERRUPTS.append(pickle.loads(pickled_data))
