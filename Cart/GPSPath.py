@@ -4,9 +4,9 @@ from collections import namedtuple
 import math
 
 class GPSPath(object):
-    def __init__(self,waypoints,offset=(0,0),tol=0.000015):
-        for lat,lon,time in waypoints:
-            self.waypoints.append((lat+offset[0],lon+offset[1],time))
+    def __init__(self,waypoints,offset=(0,0),tol=0.0000075):
+        for pos,time in waypoints:
+            self.waypoints.append((pos[0]+offset[0],pos[1]+offset[1],time))
     	self.pathTime = 0
         self.trackTime = 0
         self.tol = tol
