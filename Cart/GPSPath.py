@@ -5,8 +5,9 @@ import math
 
 class GPSPath(object):
     def __init__(self,waypoints,offset=(0,0),tol=0.0000075):
+        self.waypoints = list()
         for pos,time in waypoints:
-            self.waypoints.append((pos[0]+offset[0],pos[1]+offset[1],time))
+            self.waypoints.append(((pos[0]+offset[0],pos[1]+offset[1]),time))
     	self.pathTime = 0
         self.trackTime = 0
         self.tol = tol
@@ -29,6 +30,8 @@ class GPSPath(object):
             vec_path.append(Leg(vec,deltaTime,endTime))
             pos0 = pos
             time0 = time
+        if len(vec_path) == 0:
+            vec_path.append(Leg(Vector(pos0,pos0),0,0))
         return deque(vec_path)
 
     #Return the vector from GPSInfo towards the location at path(time)

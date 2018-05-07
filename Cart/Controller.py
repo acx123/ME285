@@ -23,7 +23,7 @@ class Controller(object):
         self.accel_pin = ('AIN5')
         self.duty_cycle_range = 50
         ADC.setup()
-        self.adxl = ADXL()
+#        self.adxl = ADXL()
         PWM.start(self.motorpins[0],0,10000)
         PWM.start(self.motorpins[1],0,10000)
         self.GPS = gps.AGPS3mechanism()
@@ -38,7 +38,7 @@ class Controller(object):
             if len(self.INTERRUPTS) > 0:
                 handleInterrupt(self.INTERRUPTS.popleft())
             t1 = time.time()
-            self.MODES[self.mode](time.time() - t0)
+            self.MODES[self.mode](time.time() - self.t0)
             self.t0 = t1
 
     def manualStep(self,deltaTime):
@@ -86,11 +86,17 @@ class Controller(object):
     def _network(self):
         serv = socket.socket()
         serv.bind(('',4440))
+        serv.listen(1)
         cli,cli_addr = serv.accept()
+        serv.listen(0)
         while True:
-            pickled_data = cli.recv(1024)
-            if pickled_data == '':
+            try:
+                pickled_data = cli.recv(1024)
+                dat = pickle.loads(pickled_data)
+            except EOFError:
+                serv.listen(1)
                 cli,cli_addr = serv.accept()
+                serv.listen(0)
                 continue
             self.INTERRUPTS.append(pickle.loads(pickled_data))
 
