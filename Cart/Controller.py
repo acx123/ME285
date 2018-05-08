@@ -1,5 +1,5 @@
 from gps3 import agps3threaded as gps
-from collections import deque
+from queue import Queue
 from collections import namedtuple
 import socket
 import pickle
@@ -14,7 +14,11 @@ class Controller(object):
     def __init__(self,GPSPath):
         self.running = True
         self.server = threading.Thread(target=self._network)
+        self.server.daemon = True
         self.server.start()
+        self.INTERRUPTS = Queue()
+        self.lcd_buffer = Queue(10)
+
         self.GPSPath = GPSPath
         self.MODES = {'MANUAL':self.manualStep,'ASSIST':self.assistStep,'STOP':self.stop}
         self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'NEW_PATH_R':self.changePathR,'EXIT':self.quit}
@@ -25,8 +29,9 @@ class Controller(object):
         ADC.setup()
 
 #       self.adxl = ADXL()
-        self.lcd = LCD()
-        self.lcd.set_message('MANUAL MODE')
+        self.lcd = LCD(self.lcd_buffer)
+        self.lcd.daemon = True
+        self.lcd.start()
 
         PWM.start(self.motorpins[0],0,10000)
         PWM.start(self.motorpins[1],0,10000)
@@ -35,28 +40,37 @@ class Controller(object):
         self.GPS.stream_data()
         self.GPS.run_thread()
         self.t0 = 0
-        self.INTERRUPTS = deque(list())
+
         self.pot_offset = (0.13870574533939362,0.4454212486743927)
+        self.prev_pos = None
+
+        self.conv_const = 364320 #to convert deg of lat to feet
+        self.max_speed = 12 #max speed in ft/sec
         #self.us = Ultrasound(self.INTERRUPTS,self.fwd_rev)
         #self.us.start()
 
     def readPot(self):
-        #return 1-((ADC.read(self.accel_pin)-self.pot_offset[0])/(self.pot_offset[1]-self.pot_offset[0]))
-	return 0
+        return 1-((ADC.read(self.accel_pin)-self.pot_offset[0])/(self.pot_offset[1]-self.pot_offset[0]))
+
     def manualStep(self,deltaTime):
         userRequested = self.readPot()
         self.setMotorSpeed(userRequested,userRequested)
 
     def assistStep(self,deltaTime):
         cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
+        if prev_pos == None:
+            prev_pos = cur_pos
         userRequested = self.readPot()
         cur_acc = adxl.accelData()
         GPSPath.updatePosition(cur_pos,t0)
         deviation = GPSPath.pathDeviation(cur_pos)
-        self.setMotorSpeed(userRequested,userRequested)
-        self.setMotorSpeed(0,0)
-        #bearing = GPSPath.getRelBearing() Calculate heading
-        #The function
+        dev_dist,dev_angle = self.GPSPath.pathDeviation(cur_pos)
+        pos_vec = Vector(prev_pos,cur_pos)
+        gps_vel = abs(pos_vec)/deltaTime
+        adj_max_speed = self.GPSPath.speedReq(time)/(1 + dev_angle*dev_dist*20000 + pos_vec/min(dev_dist,0.3))
+        adj_max_ds = adj_max_speed*self.conv_const/self.max_speed
+        min_ds = min([userRequested,adj_max_ds])
+        self.setMotorSpeed(min_ds, min_ds)
 
     def PIDStep(error,Kp=0.1,Ki=0.1,Kd=0.1):
         pass
@@ -80,6 +94,11 @@ class Controller(object):
 
     def changeMode(args):
         self.mode = MODES[args]
+        if self.mode == 'MANUAL':
+            self.lcd_buffer.put('MANUAL MODE')
+        elif self.mode == 'STOP':
+            self.lcd_buffer.put('STOPPED!\nCheck for obstructions')
+        self.prev_pos = None
 
     def changePath(args):
         self.GPSPath = args
@@ -93,8 +112,11 @@ class Controller(object):
     def run(self):
         self.t0 = time.time()
         while self.running:
-            if len(self.INTERRUPTS) > 0:
-                handleInterrupt(self.INTERRUPTS.popleft())
+            try:
+                handleInterrupt(self.INTERRUPTS.get(block=False))
+                self.INTERRUPTS.task_done()
+            except:
+                pass
             t1 = time.time()
             self.MODES[self.mode](time.time() - self.t0)
             self.t0 = t1
@@ -114,7 +136,7 @@ class Controller(object):
                 cli,cli_addr = serv.accept()
                 serv.listen(0)
                 continue
-            self.INTERRUPTS.append(pickle.loads(pickled_data))
+            self.INTERRUPTS.put(pickle.loads(pickled_data))
 
 
 class ADXL(object):
@@ -142,7 +164,7 @@ class ADXL(object):
         data = ((data[0] - (data[0] >> 15) * 65536) * ADXL_SENS * 32.2,(data[1] - (data[1] >> 15) * 65536) * ADXL_SENS * 32.2,(data[2] - (data[2] >> 15) * 65536) * ADXL_SENS * 32.2)
         return data
 
-class LCD(object):
+class LCD(threading.Thread):
     # commands
     _LCD_CLEARDISPLAY = 0x01
     _LCD_RETURNHOME = 0x02
@@ -189,23 +211,30 @@ class LCD(object):
     _Rw = 0x02  # Read/Write bit
     _Rs = 0x01  # Register select bit
 
-    def __init__(self,address=0x27,busnum=2,col=16,row=2):
+    def __init__(self,queue,address=0x27,busnum=2,col=16,row=2):
         self.device = I2C.get_i2c_device(address,busnum)
         self.col = col
         self.row = row
         time.sleep(0.045)
         self._backlight = self._LCD_BACKLIGHT
+        self._buff = queue
         for _delay in [0.004500, 0.004500, 0.000150]:
-            self.write4(0x03 << 4)
+            self.write4(0x03)
             time.sleep(_delay)
 
-        self.write4(0x02 << 4)
+        self.write4(0x02)
 
         self.write4(self._LCD_FUNCTIONSET | self._LCD_4BITMODE | self._LCD_2LINE | self._LCD_5x8DOTS)
 
         self.write4(self._LCD_DISPLAYCONTROL | self._LCD_DISPLAYON | self._LCD_CURSOROFF | self._LCD_BLINKOFF)
 
         self.write4(self._LCD_ENTRYMODESET | self._LCD_ENTRYLEFT | self._LCD_ENTRYSHIFTDECREMENT)
+
+    def run():
+        while True:
+            text = self._buff.get()
+            self.set_message(text)
+            self._buff.task_done()
 
     def write4(self,data,mode=0):
         dat_hl = ((data & 0xF0) | mode , ((data << 4) & 0xF0)| mode)
@@ -222,6 +251,10 @@ class LCD(object):
 
     def set_message(self,string):
         self.move_cursor(0,0)
+        lines = string.splitlines()
+        msg = ''
+        for line in lines:
+            msg = (msg + line).lshift(16) + '\n'
         for char in string:
             if char is '\n':
                 self.move_cursor(0,1)

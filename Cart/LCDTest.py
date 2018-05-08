@@ -1,7 +1,7 @@
 import Adafruit_GPIO.I2C as I2C
 import time
 
-class LCD:
+class LCD(object):
     # commands
     _LCD_CLEARDISPLAY = 0x01
     _LCD_RETURNHOME = 0x02
@@ -48,17 +48,17 @@ class LCD:
     _Rw = 0x02  # Read/Write bit
     _Rs = 0x01  # Register select bit
 
-    def __init__(address=0x27,busnum=2,col=16,row=2):
-        device = I2C.get_i2c_device(address,busnum)
+    def __init__(self,address=0x27,busnum=2,col=16,row=2):
+        self.device = I2C.get_i2c_device(address,busnum)
         self.col = col
         self.row = row
         time.sleep(0.045)
         self._backlight = self._LCD_BACKLIGHT
         for _delay in [0.004500, 0.004500, 0.000150]:
-            self.write4(0x03 << 4)
+            self.write4(0x03)
             time.sleep(_delay)
 
-        self.write4(0x02 << 4)
+        self.write4(0x02)
 
         self.write4(self._LCD_FUNCTIONSET | self._LCD_4BITMODE | self._LCD_2LINE | self._LCD_5x8DOTS)
 
@@ -69,10 +69,10 @@ class LCD:
     def write4(self,data,mode=0):
         dat_hl = ((data & 0xF0) | mode , ((data << 4) & 0xF0)| mode)
         for dat in dat_hl:
-            self.device.write8(dat | self._backlight)
-            self.device.write8((dat | _En) | self._backlight)
+            self.device.writeRaw8(dat | self._backlight)
+            self.device.writeRaw8((dat | self._En) | self._backlight)
             time.sleep(0.000001)
-            self.device.write8((dat | ~_En) | self._backlight)
+            self.device.writeRaw8((dat | ~self._En) | self._backlight)
             time.sleep(0.000050)
 
     def move_cursor(self,col,row):
@@ -81,6 +81,7 @@ class LCD:
 
     def set_message(self,string):
         self.move_cursor(0,0)
+        string = string[0:15].ljust(16) + '\n' + string[16::].ljust(16)
         for char in string:
             if char is '\n':
                 self.move_cursor(0,1)
