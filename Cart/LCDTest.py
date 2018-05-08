@@ -49,7 +49,7 @@ class LCD:
     _Rs = 0x01  # Register select bit
 
     def __init__(address=0x27,busnum=2,col=16,row=2):
-        self.device = I2C.get_i2c_device(_addr,_bus)
+        self.device = I2C.get_i2c_device(address,busnum)
         self.col = col
         self.row = row
         time.sleep(0.045)
