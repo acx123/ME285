@@ -31,6 +31,10 @@ class Controller(object):
         self.GPS.run_thread()
         self.t0 = 0
         self.INTERRUPTS = deque(list())
+        self.conv_const = 364320 #to convert deg of lat to feet
+        self.max_speed = 12 #max speed in ft/sec
+        #self.cg_dist = constant distance to center of gravity
+
 
     def run(self):
         self.t0 = time.time()
@@ -47,13 +51,15 @@ class Controller(object):
 
     def assistStep(self,deltaTime):
         cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
-        cur_vel = GPS.data_stream.speed
         userRequested = ADC.read(accel_pin)
         cur_acc = adxl.accelData()
-        GPSPath.updatePosition(cur_pos,t0)
-        deviation = GPSPath.pathDeviation(cur_pos)
-        #bearing = GPSPath.getRelBearing() Calculate heading
-        #The function
+        self.GPSPath.updatePosition(cur_pos,t0)
+        prev_pos = (pos,time)
+        dev_dist,dev_angle = self.GPSPath.pathDeviation(cur_pos)
+        pos_vec = Vector(prev_pos,cur_pos)
+        gps_vel = abs(pos_vec)/deltaTime
+        duty_cyc_conv = self.GPSPath.speedReq(time)*self.conv_const/self.max_speed
+        adj_max_speed = self.GPSPath.speedReq(time)/(1 + dev_angle*dev_dist + pos_vec/min(dev_dist,0.3))
 
     def PIDStep(error,Kp=0.1,Ki=0.1,Kd=0.1):
         pass
