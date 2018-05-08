@@ -24,7 +24,7 @@ class Controller(object):
         self.duty_cycle_range = 49
         ADC.setup()
 
-        #self.adxl = ADXL()
+#       self.adxl = ADXL()
         self.lcd = LCD()
         self.lcd.set_message('MANUAL MODE')
 
@@ -41,8 +41,8 @@ class Controller(object):
         #self.us.start()
 
     def readPot(self):
-        return 1-((adc.read(a)-pot_offset[0])/(pot_offset[1]-pot_offset[0]))
-
+        #return 1-((ADC.read(self.accel_pin)-self.pot_offset[0])/(self.pot_offset[1]-self.pot_offset[0]))
+	return 0
     def manualStep(self,deltaTime):
         userRequested = self.readPot()
         self.setMotorSpeed(userRequested,userRequested)
@@ -142,7 +142,7 @@ class ADXL(object):
         data = ((data[0] - (data[0] >> 15) * 65536) * ADXL_SENS * 32.2,(data[1] - (data[1] >> 15) * 65536) * ADXL_SENS * 32.2,(data[2] - (data[2] >> 15) * 65536) * ADXL_SENS * 32.2)
         return data
 
-class LCD:
+class LCD(object):
     # commands
     _LCD_CLEARDISPLAY = 0x01
     _LCD_RETURNHOME = 0x02
@@ -189,8 +189,8 @@ class LCD:
     _Rw = 0x02  # Read/Write bit
     _Rs = 0x01  # Register select bit
 
-    def __init__(address=0x27,busnum=2,col=16,row=2):
-        device = I2C.get_i2c_device(address,busnum)
+    def __init__(self,address=0x27,busnum=2,col=16,row=2):
+        self.device = I2C.get_i2c_device(address,busnum)
         self.col = col
         self.row = row
         time.sleep(0.045)
@@ -210,10 +210,10 @@ class LCD:
     def write4(self,data,mode=0):
         dat_hl = ((data & 0xF0) | mode , ((data << 4) & 0xF0)| mode)
         for dat in dat_hl:
-            self.device.write8(dat | self._backlight)
-            self.device.write8((dat | _En) | self._backlight)
+            self.device.writeRaw8(dat | self._backlight)
+            self.device.writeRaw8((dat | self._En) | self._backlight)
             time.sleep(0.000001)
-            self.device.write8((dat | ~_En) | self._backlight)
+            self.device.writeRaw8((dat | ~self._En) | self._backlight)
             time.sleep(0.000050)
 
     def move_cursor(self,col,row):
