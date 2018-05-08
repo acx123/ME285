@@ -16,14 +16,14 @@ class Controller(object):
         self.server = threading.Thread(target=self._network)
         self.server.start()
         self.GPSPath = GPSPath
-        self.MODES = {'MANUAL':self.manualStep,'ASSIST':self.assistStep}
-        self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'NEW_PATH_R':self.changePathR,'STOP':self.quit}
+        self.MODES = {'MANUAL':self.manualStep,'ASSIST':self.assistStep,'STOP':self.stop}
+        self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'NEW_PATH_R':self.changePathR,'EXIT':self.quit}
         self.mode = 'MANUAL'
         self.motorpins = ('P9_14','P9_16')
         self.accel_pin = ('AIN5')
-        self.duty_cycle_range = 50
+        self.duty_cycle_range = 49
         ADC.setup()
-#        self.adxl = ADXL()
+        self.adxl = ADXL()
         PWM.start(self.motorpins[0],0,10000)
         PWM.start(self.motorpins[1],0,10000)
         self.GPS = gps.AGPS3mechanism()
@@ -31,27 +31,25 @@ class Controller(object):
         self.GPS.run_thread()
         self.t0 = 0
         self.INTERRUPTS = deque(list())
+        self.pot_offset = (0.13870574533939362,0.4454212486743927)
+        #self.us = Ultrasound(self.INTERRUPTS,self.fwd_rev)
+        #self.us.start()
 
-    def run(self):
-        self.t0 = time.time()
-        while self.running:
-            if len(self.INTERRUPTS) > 0:
-                handleInterrupt(self.INTERRUPTS.popleft())
-            t1 = time.time()
-            self.MODES[self.mode](time.time() - self.t0)
-            self.t0 = t1
+    def readPot(self):
+        return 1-((adc.read(a)-pot_offset[0])/(pot_offset[1]-pot_offset[0]))
 
     def manualStep(self,deltaTime):
-        userRequested = ADC.read(self.accel_pin)
+        userRequested = self.readPot()
         self.setMotorSpeed(userRequested,userRequested)
 
     def assistStep(self,deltaTime):
         cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
-        cur_vel = GPS.data_stream.speed
-        userRequested = ADC.read(accel_pin)
+        userRequested = self.readPot()
         cur_acc = adxl.accelData()
         GPSPath.updatePosition(cur_pos,t0)
         deviation = GPSPath.pathDeviation(cur_pos)
+        self.setMotorSpeed(userRequested,userRequested)
+        self.setMotorSpeed(0,0)
         #bearing = GPSPath.getRelBearing() Calculate heading
         #The function
 
@@ -66,6 +64,10 @@ class Controller(object):
         running = False
         self.GPS.stop()
         self.server.stop()
+        setMotorSpeed(0,0)
+
+    def stop(self,deltaTime):
+        setMotorSpeed(0,0)
 
     def handleInterrupt(interrupt):
         cmd,args = interrupt
@@ -82,6 +84,15 @@ class Controller(object):
         cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
         self.GPSPath = GPSPath(args,offset=cur_pos)
         self.t0 = 0
+
+    def run(self):
+        self.t0 = time.time()
+        while self.running:
+            if len(self.INTERRUPTS) > 0:
+                handleInterrupt(self.INTERRUPTS.popleft())
+            t1 = time.time()
+            self.MODES[self.mode](time.time() - self.t0)
+            self.t0 = t1
 
     def _network(self):
         serv = socket.socket()
@@ -116,6 +127,9 @@ class ADXL(object):
         adxl.write16(self.ADXL_FMT,0x08)
         for reg,offset in zip(self.ADXL_OFFREG,self.ADXL_OFFSETS):
             adxl.write16(reg,offset)
+
+    def calibrateAngles(self):
+        pass
 
     def accelData(self):
         raw_data = adxl.readList(self.ADXL_DAT,self.ADXL_TO_READ)

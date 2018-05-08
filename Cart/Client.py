@@ -4,7 +4,6 @@ import sys
 import pickle
 import re
 
-
 def setmode(command):
     try:
         MODES[command]
@@ -23,20 +22,18 @@ def setpath(command):
         waypoints.append([((int)(values[0])*ft2pt,(int)(values[1])*ft2pt),(int)(values[2])])
     return('NEW_PATH_R',waypoints)
 
-def quit():
+def exit():
     running = False
-    return ''
+    return None
 
+def stop():
+    return ('EXIT',1)
 
 running = True
-CMDS = {'quit':quit,'setmode':setmode,'setpath':setpath}
+CMDS = {'quit':exit,'setmode':setmode,'setpath':setpath}
 pattern = '(\d+(?:,\s*\d+)*)'
 ft2pt = 1/0.000003
 MODES = {'MANUAL':1,'ASSIST':1}
-
-def quit(command):
-    pass
-
 
 if __name__ == '__main__':
     serv_addr,serv_port = sys.argv[1:3]
@@ -53,3 +50,4 @@ if __name__ == '__main__':
             print('Command not found')
         except Exception as excp:
             print(excp)
+    serv.close()
