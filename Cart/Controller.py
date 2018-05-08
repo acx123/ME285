@@ -61,7 +61,7 @@ class Controller(object):
         PWM.set_duty_cycle(self.motorpins[1], self.duty_cycle_range * m2)
 
     def quit(args):
-        running = False
+        self.running = False
         self.GPS.stop()
         self.server.stop()
         setMotorSpeed(0,0)
@@ -71,10 +71,10 @@ class Controller(object):
 
     def handleInterrupt(interrupt):
         cmd,args = interrupt
-        INTR_TYPES[cmd](args)
+        self.INTR_TYPES[cmd](args)
 
     def changeMode(args):
-        mode = MODES[args]
+        self.mode = MODES[args]
 
     def changePath(args):
         self.GPSPath = args

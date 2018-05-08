@@ -1,5 +1,5 @@
 import threading
-
+import Adafruit_BBIO.GPIO as GPIO
 class Ultrasound(threading.Thread):
     def __init__(self,interrupts,fwd_rev):
         self.interrupts = interrupts
