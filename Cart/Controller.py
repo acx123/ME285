@@ -26,6 +26,8 @@ class Controller(object):
         self.mode = 'MANUAL'
         self.motorpins = ('P9_14','P9_16')
         self.accel_pin = ('AIN5')
+        self.fwd_rev = ('P9_25')
+        self.brake = ('P9_27')
         self.duty_cycle_range = 49
         ADC.setup()
 
@@ -64,6 +66,9 @@ class Controller(object):
 
     def assistStep(self,deltaTime):
         cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
+        if cur_pos[0] == 'N/A' or cur_pos[1] == 'N/A':
+            self.mode = 'MANUAL'
+            break;
         if prev_pos == None:
             prev_pos = cur_pos
         userRequested = self.readPot()
@@ -82,14 +87,14 @@ class Controller(object):
         min_ds = min([userRequested,adj_max_ds])
         self.setMotorSpeed(min_ds, min_ds)
 
-    def PIDStep(error,Kp=0.1,Ki=0.1,Kd=0.1):
+    def PIDStep(self,error,Kp=0.1,Ki=0.1,Kd=0.1):
         pass
 
     def setMotorSpeed(self,m1,m2):
         PWM.set_duty_cycle(self.motorpins[0], self.duty_cycle_range * m1)
         PWM.set_duty_cycle(self.motorpins[1], self.duty_cycle_range * m2)
 
-    def quit(args):
+    def quit(self,args):
         self.running = False
         self.GPS.stop()
         self.server.stop()
@@ -99,11 +104,11 @@ class Controller(object):
     def stop(self,deltaTime):
         setMotorSpeed(0,0)
 
-    def handleInterrupt(interrupt):
+    def handleInterrupt(self,interrupt):
         cmd,args = interrupt
         self.INTR_TYPES[cmd](args)
 
-    def changeMode(args):
+    def changeMode(self,args):
         self.mode = self.MODES[args]
         if self.mode == 'MANUAL':
             self.lcd_buffer.put(('MANUAL MODE',''))
@@ -111,11 +116,11 @@ class Controller(object):
             self.lcd_buffer.put(('STOPPED!','Check for obstructions'))
         self.prev_pos = None
 
-    def changePath(args):
+    def changePath(self,args):
         self.GPSPath = args
         self.t0 = 0
 
-    def changePathR(args):
+    def changePathR(self,args):
         cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
         self.GPSPath = GPSPath(args,offset=cur_pos)
         self.t0 = 0
@@ -124,10 +129,13 @@ class Controller(object):
         self.t0 = time.time()
         while self.running:
             try:
-                self.handleInterrupt(self.INTERRUPTS.get_nowait())
+                inter = self.INTERRUPTS.get_nowait()
+                self.handleInterrupt(inter)
                 self.INTERRUPTS.task_done()
             except Empty:
                 pass
+            except TypeError:
+                print(inter)
             t1 = time.time()
             self.MODES[self.mode](time.time() - self.t0)
             self.t0 = t1
@@ -226,6 +234,8 @@ class LCD(threading.Thread):
 
     def __init__(self,queue,address=0x27,busnum=2,col=16,row=2):
         self.device = I2C.get_i2c_device(address,busnum)
+        self._addr = address
+        self._bus = busnum
         self.col = col
         self.row = row
         time.sleep(0.045)
@@ -253,13 +263,18 @@ class LCD(threading.Thread):
 
     def write4(self,data,mode=0):
         dat_hl = ((data & 0xF0) | mode , ((data << 4) & 0xF0)| mode)
-
-        for dat in dat_hl:
-            self.device.writeRaw8(dat | self._backlight)
-            self.device.writeRaw8((dat | self._En) | self._backlight)
-            time.sleep(0.000001)
-            self.device.writeRaw8((dat | ~self._En) | self._backlight)
-            time.sleep(0.000050)
+        try:
+            for dat in dat_hl:
+                self.device.writeRaw8(dat | self._backlight)
+                self.device.writeRaw8((dat | self._En) | self._backlight)
+                time.sleep(0.000001)
+                self.device.writeRaw8((dat | ~self._En) | self._backlight)
+                time.sleep(0.000050)
+        except IOError:
+            if IOError.errno == 11:
+                self.write4(data,mode)
+            elif IOError.errno == 121:
+                self.device = I2C.get_i2c_device(self._addr,self._bus)
 
     def move_cursor(self,col,row):
         rows = [0x00,0x40]

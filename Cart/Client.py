@@ -22,12 +22,13 @@ def setpath(command):
         waypoints.append([((int)(values[0])*ft2pt,(int)(values[1])*ft2pt),(int)(values[2])])
     return('NEW_PATH_R',waypoints)
 
-def exit():
+def exit(args):
     running = False
     return None
 
-def remotequit():
-    return ('EXIT,1)
+def remotequit(args):
+    return ('EXIT',1)
+
 running = True
 CMDS = {'quit':exit,'setmode':setmode,'setpath':setpath,'remotequit':remotequit}
 pattern = '(\d+(?:,\s*\d+)*)'
