@@ -37,7 +37,7 @@ class Controller(object):
         self.duty_cycle_range = 49
         ADC.setup()
 
-        self.adxl = ADXL()
+#        self.adxl = ADXL()
         self.lcd = LCD(self.lcd_buffer)
         self.lcd.daemon = True
         self.lcd.start()
@@ -79,7 +79,7 @@ class Controller(object):
         if self.prev_pos == None:
             self.prev_pos = cur_pos
         userRequested = self.readPot()
-        cur_acc = self.adxl.accelData()
+#        cur_acc = self.adxl.accelData()
         self.GPSPath.updatePosition(cur_pos,self.t0)
         deviation = self.GPSPath.pathDeviation(cur_pos)
         dev_dist,dev_angle = self.GPSPath.pathDeviation(cur_pos)
@@ -97,7 +97,7 @@ class Controller(object):
         turn_angle = dev_bear if dev_dist*self.conv_const > 5 else rel_bear
         line2 = ('Close' if dev_dist*self.conv_const < 5 else 'Far' ,'Right' if dev_bear < 0 else 'Left')
         try:
-            self.lcd_buffer.put_nowait(('DEV:{:3} |BEA:{:3}'.format(dev_dist,turn_angle),'{:7}|{:7}'.format(line2)))
+            self.lcd_buffer.put_nowait(('DEV:{:3} |BEA:{:3}'.format(dev_dist,abs(turn_angle)),'{:7}|{:7}'.format(line2)))
         except Full:
             pass
 
@@ -147,7 +147,6 @@ class Controller(object):
         while self.running:
 #       if GPIO.event_detected(frswitch):
 #        GPIO.output(fwd_rev,GPIO.input(frswitch))
-
             try:
                 inter = self.INTERRUPTS.get_nowait()
                 self.handleInterrupt(inter)

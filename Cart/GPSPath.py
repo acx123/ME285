@@ -39,12 +39,12 @@ class GPSPath(object):
         if (time <= self.currentLeg.endTime - self.currentLeg.deltaTime):
             return Vector(pos,self.currentLeg.vector.origin)
         elif (time >= self.currentLeg.endTime):
-            return Vector(pos,currentLeg.vector.end)
+            return Vector(pos,self.currentLeg.vector.end)
         current_pos = time * self.currentLeg.vector/self.currentLeg.deltaTime
         return Vector(pos,current_pos.end)
 
     def pathDeviation(self,pos):
-        vec = getVectorTo(pos,trackTime)
+        vec = getVectorTo(pos,self.trackTime)
         return (abs(vec),vec.absAngle())
 
     #Return the time corresponding to the position that is nearest to GPSInfo along
@@ -57,7 +57,7 @@ class GPSPath(object):
     def getRelBearing(self,heading):
         pathBearing = self.currentLeg.vector.absAngle() - heading
         if (pathBearing > 180):
-            return 360 - pathBearing
+            return 180 - pathBearing
         return pathBearing
 
     #set pathTime to path(time)
@@ -69,16 +69,16 @@ class GPSPath(object):
         currentTime = self.closestPathTime(pos)
         current_vec = self.getVectorTo(pos, pathTime)
         self.trackTime = currentTime / (1 + abs(current_vec))
-        if (pathTime >= endTime and abs(current_vec) <= self.tol):
+        if (self.pathTime >= self.currentLeg.endTime and abs(current_vec) <= self.tol):
             currentLeg = self.vectorPath.popLeft()
 
 
     #return the distance along the path between time and pathTime
-	def pathDistance(self,time=trackTime):
-		return (pathTime - time) * abs(currentLeg.vector) / currentLeg.deltaTime
+	def pathDistance(self,time=self.trackTime):
+		return (self.pathTime - time) * abs(self.currentLeg.vector) / self.currentLeg.deltaTime
 
-	def speedReq(self,time=trackTime):
-		return pathDistance() / (currentLeg.deltaTime - pathTime + time)
+	def speedReq(self,time=self.trackTime):
+		return pathDistance() / (self.currentLeg.deltaTime - self.pathTime + time)
 
 class Vector(object):
     def __init__(self,origin,end):

@@ -48,6 +48,8 @@ if __name__ == '__main__':
             print('pickle: ', msg)
             ret = serv.sendall(msg)
             print('bits sent: ',ret)
+            recv = serv.recv(1024)
+            print(pickle.loads(recv))
         except ValueError:
             print('Command not found')
         except Exception as excp:
