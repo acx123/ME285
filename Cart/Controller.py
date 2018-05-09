@@ -1,6 +1,7 @@
 from gps3 import agps3threaded as gps
-from queue import Queue
+from Queue import Queue,Empty
 from collections import namedtuple
+import GPSPath
 import socket
 import pickle
 import time
@@ -13,12 +14,12 @@ import Adafruit_GPIO.I2C as I2C
 class Controller(object):
     def __init__(self,GPSPath):
         self.running = True
-        self.server = threading.Thread(target=self._network)
+        self.INTERRUPTS = Queue()
+        self.lcd_buffer = Queue(2)
+
+        self.server = threading.Thread(target=self._network,args=[self.INTERRUPTS])
         self.server.daemon = True
         self.server.start()
-        self.INTERRUPTS = Queue()
-        self.lcd_buffer = Queue(10)
-
         self.GPSPath = GPSPath
         self.MODES = {'MANUAL':self.manualStep,'ASSIST':self.assistStep,'STOP':self.stop}
         self.INTR_TYPES = {'CM':self.changeMode,'NEW_PATH':self.changePath,'NEW_PATH_R':self.changePathR,'EXIT':self.quit}
@@ -28,10 +29,12 @@ class Controller(object):
         self.duty_cycle_range = 49
         ADC.setup()
 
-#       self.adxl = ADXL()
+        self.adxl = ADXL()
         self.lcd = LCD(self.lcd_buffer)
         self.lcd.daemon = True
         self.lcd.start()
+
+        self.lcd_buffer.put(('MANUAL MODE','    MANUAL MODE'))
 
         PWM.start(self.motorpins[0],0,10000)
         PWM.start(self.motorpins[1],0,10000)
@@ -41,23 +44,26 @@ class Controller(object):
         self.GPS.run_thread()
         self.t0 = 0
 
-        self.pot_offset = (0.13870574533939362,0.4454212486743927)
+        self.pot_offset = (0.10,0.50)
         self.prev_pos = None
 
         self.conv_const = 364320 #to convert deg of lat to feet
         self.max_speed = 12 #max speed in ft/sec
         #self.us = Ultrasound(self.INTERRUPTS,self.fwd_rev)
         #self.us.start()
+        self._numcalls = 0
 
     def readPot(self):
-        return 1-((ADC.read(self.accel_pin)-self.pot_offset[0])/(self.pot_offset[1]-self.pot_offset[0]))
+        val = (self.pot_offset[1]-ADC.read('AIN5'))/(self.pot_offset[1]-self.pot_offset[0])
+        return max([0,min([1,val])])
 
     def manualStep(self,deltaTime):
         userRequested = self.readPot()
         self.setMotorSpeed(userRequested,userRequested)
+        self.lcd_buffer.put(('MANU|DC: {:5}'.format(self.INTERRUPTS),'UAL |freq: {:5}'.format(self._numcalls/self.t0)))
 
     def assistStep(self,deltaTime):
-        cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
+        cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
         if prev_pos == None:
             prev_pos = cur_pos
         userRequested = self.readPot()
@@ -65,7 +71,11 @@ class Controller(object):
         GPSPath.updatePosition(cur_pos,t0)
         deviation = GPSPath.pathDeviation(cur_pos)
         dev_dist,dev_angle = self.GPSPath.pathDeviation(cur_pos)
-        pos_vec = Vector(prev_pos,cur_pos)
+        pos_vec = GPSPath.Vector(prev_pos,cur_pos)
+        heading = pos_vec.absAngle()
+        dev_bear = dev_angle - heading
+        if abs(dev_bear) > 180:
+            dev_bear = 180 + dev_bear * (1 - 2 * (dev_bear > 0))
         gps_vel = abs(pos_vec)/deltaTime
         adj_max_speed = self.GPSPath.speedReq(time)/(1 + dev_angle*dev_dist*20000 + pos_vec/min(dev_dist,0.3))
         adj_max_ds = adj_max_speed*self.conv_const/self.max_speed
@@ -83,6 +93,7 @@ class Controller(object):
         self.running = False
         self.GPS.stop()
         self.server.stop()
+        self.lcd.stop()
         setMotorSpeed(0,0)
 
     def stop(self,deltaTime):
@@ -93,11 +104,11 @@ class Controller(object):
         self.INTR_TYPES[cmd](args)
 
     def changeMode(args):
-        self.mode = MODES[args]
+        self.mode = self.MODES[args]
         if self.mode == 'MANUAL':
-            self.lcd_buffer.put('MANUAL MODE')
+            self.lcd_buffer.put(('MANUAL MODE',''))
         elif self.mode == 'STOP':
-            self.lcd_buffer.put('STOPPED!\nCheck for obstructions')
+            self.lcd_buffer.put(('STOPPED!','Check for obstructions'))
         self.prev_pos = None
 
     def changePath(args):
@@ -113,15 +124,16 @@ class Controller(object):
         self.t0 = time.time()
         while self.running:
             try:
-                handleInterrupt(self.INTERRUPTS.get(block=False))
+                self.handleInterrupt(self.INTERRUPTS.get_nowait())
                 self.INTERRUPTS.task_done()
-            except:
+            except Empty:
                 pass
             t1 = time.time()
             self.MODES[self.mode](time.time() - self.t0)
             self.t0 = t1
+            self._numcalls = self._numcalls + 1
 
-    def _network(self):
+    def _network(self,inter):
         serv = socket.socket()
         serv.bind(('',4440))
         serv.listen(1)
@@ -131,12 +143,13 @@ class Controller(object):
             try:
                 pickled_data = cli.recv(1024)
                 dat = pickle.loads(pickled_data)
+                self.lcd_buffer.put(dat)
             except EOFError:
                 serv.listen(1)
                 cli,cli_addr = serv.accept()
                 serv.listen(0)
                 continue
-            self.INTERRUPTS.put(pickle.loads(pickled_data))
+            inter.put_nowait(pickle.loads(pickled_data))
 
 
 class ADXL(object):
@@ -229,15 +242,18 @@ class LCD(threading.Thread):
         self.write4(self._LCD_DISPLAYCONTROL | self._LCD_DISPLAYON | self._LCD_CURSOROFF | self._LCD_BLINKOFF)
 
         self.write4(self._LCD_ENTRYMODESET | self._LCD_ENTRYLEFT | self._LCD_ENTRYSHIFTDECREMENT)
+        super(LCD,self).__init__()
 
-    def run():
+    def run(self):
         while True:
             text = self._buff.get()
             self.set_message(text)
+            time.sleep(0.5)
             self._buff.task_done()
 
     def write4(self,data,mode=0):
         dat_hl = ((data & 0xF0) | mode , ((data << 4) & 0xF0)| mode)
+
         for dat in dat_hl:
             self.device.writeRaw8(dat | self._backlight)
             self.device.writeRaw8((dat | self._En) | self._backlight)
@@ -248,14 +264,14 @@ class LCD(threading.Thread):
     def move_cursor(self,col,row):
         rows = [0x00,0x40]
         self.write4(self._LCD_SETDDRAMADDR | (rows[row] + col))
+        time.sleep(0.00001)
 
     def set_message(self,string):
         self.move_cursor(0,0)
-        lines = string.splitlines()
-        msg = ''
+        lines = (string[0].ljust(16),string[1].ljust(16))
         for line in lines:
-            msg = (msg + line).lshift(16) + '\n'
-        for char in string:
-            if char is '\n':
-                self.move_cursor(0,1)
-            self.write4(ord(char),mode=0x01)
+            for char in line:
+                time.sleep(0.000001)
+                self.write4(ord(char),mode=0x01)
+            self.move_cursor(0,1)
+        return lines

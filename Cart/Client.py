@@ -26,26 +26,27 @@ def exit():
     running = False
     return None
 
-def stop():
-    return ('EXIT',1)
-
+def remotequit():
+    return ('EXIT,1)
 running = True
-CMDS = {'quit':exit,'setmode':setmode,'setpath':setpath}
+CMDS = {'quit':exit,'setmode':setmode,'setpath':setpath,'remotequit':remotequit}
 pattern = '(\d+(?:,\s*\d+)*)'
 ft2pt = 1/0.000003
-MODES = {'MANUAL':1,'ASSIST':1}
+MODES = {'MANUAL':1,'ASSIST':1,'STOP':1}
 
 if __name__ == '__main__':
     serv_addr,serv_port = sys.argv[1:3]
     serv = socket.create_connection((serv_addr,int(serv_port)))
-    print('Connection Established: ')
+    print('Connection Established: ',serv_addr)
     while running:
         print('>>> ',end='')
         cmd = input().split()
         try:
             cmd_form = CMDS[cmd[0]](cmd[1])
             msg = pickle.dumps(cmd_form,protocol=2)
+            print('pickle: ', msg)
             ret = serv.sendall(msg)
+            print('bits sent: ',ret)
         except ValueError:
             print('Command not found')
         except Exception as excp:
