@@ -16,7 +16,7 @@ class Controller(object):
     def __init__(self,GPSPath):
         self.running = True
         self.INTERRUPTS = Queue()
-        self.lcd_buffer = Queue(1)
+        self.lcd_buffer = Queue(2)
 
         self.server = threading.Thread(target=self._network,args=[self.INTERRUPTS])
         self.server.daemon = True
@@ -73,7 +73,7 @@ class Controller(object):
         cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
         if cur_pos[0] == 'N/A' or cur_pos[1] == 'N/A':
             self.changeMode('MANUAL')
-            return;
+            return
         else:
             cur_pos = (float(cur_pos[0]),float(cur_pos[1]))
         if self.prev_pos == None:
@@ -126,9 +126,9 @@ class Controller(object):
             print(cmd)
 
     def changeMode(self,args):
-        self.mode = self.MODES[args]
+        self.mode = args
         if self.mode == 'MANUAL':
-            self.lcd_buffer.put(('MANUAL MODE',''))
+            self.lcd_buffer.put(('MANUAL MODE','   MANUAL MODE'))
         elif self.mode == 'STOP':
             self.lcd_buffer.put(('STOPPED!','Check for obstructions'))
         self.prev_pos = None
@@ -138,7 +138,7 @@ class Controller(object):
         self.t0 = 0
 
     def changePathR(self,args):
-        cur_pos = (GPS.data_stream.lat,GPS.data_stream.lon)
+        cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
         self.GPSPath = GPSPath(args,offset=cur_pos)
         self.t0 = 0
 
@@ -176,7 +176,7 @@ class Controller(object):
                 cli,cli_addr = serv.accept()
                 serv.listen(0)
                 continue
-            inter.put_nowait(pickle.loads(pickled_data))
+            inter.put(pickle.loads(pickled_data))
 
 
 class ADXL(object):

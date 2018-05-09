@@ -19,7 +19,7 @@ def setpath(command):
     waypoints = list()
     for waypoint in str_points:
         values = waypoint.split(sep=',')
-        waypoints.append([((int)(values[0])*ft2pt,(int)(values[1])*ft2pt),(int)(values[2])])
+        waypoints.append([(float(values[0])*ft2pt,float(values[1])*ft2pt),float(values[2])])
     return('NEW_PATH_R',waypoints)
 
 def exit(args):
@@ -32,9 +32,8 @@ def remotequit(args):
 running = True
 CMDS = {'quit':exit,'setmode':setmode,'setpath':setpath,'remotequit':remotequit}
 pattern = '(\d+(?:,\s*\d+)*)'
-ft2pt = 1/0.000003
+ft2pt = 1/364320
 MODES = {'MANUAL':1,'ASSIST':1,'STOP':1}
-
 if __name__ == '__main__':
     serv_addr,serv_port = sys.argv[1:3]
     serv = socket.create_connection((serv_addr,int(serv_port)))
