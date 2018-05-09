@@ -35,27 +35,27 @@ class GPSPath(object):
         return deque(vec_path)
 
     #Return the vector from GPSInfo towards the location at path(time)
-    def getVectorTo(pos,time):
-        if (time <= currentLeg.endTime - currentLeg.deltaTime):
-            return Vector(pos,currentLeg.vector.origin)
-        elif (time >= currentLeg.endTime):
+    def getVectorTo(self,pos,time):
+        if (time <= self.currentLeg.endTime - self.currentLeg.deltaTime):
+            return Vector(pos,self.currentLeg.vector.origin)
+        elif (time >= self.currentLeg.endTime):
             return Vector(pos,currentLeg.vector.end)
-        current_pos = time * currentLeg.vector/currentLeg.deltaTime
+        current_pos = time * self.currentLeg.vector/self.currentLeg.deltaTime
         return Vector(pos,current_pos.end)
 
-    def pathDeviation(pos):
+    def pathDeviation(self,pos):
         vec = getVectorTo(pos,trackTime)
         return (abs(vec),vec.absAngle())
 
     #Return the time corresponding to the position that is nearest to GPSInfo along
     #the path.
-    def closestPathTime(pos):
-        vec = Vector(currentLeg.origin,pos.end)
-        return deltaTime * currentLeg.vector * vec / (abs(vec) * abs(currentLeg.vector))
+    def closestPathTime(self,pos):
+        vec = Vector(self.currentLeg.vector.origin,pos)
+        return deltaTime * self.currentLeg.vector * vec / (abs(vec) * abs(self.currentLeg.vector))
 
     #Return the difference between the current heading and the heading of path at trackTime
-    def getRelBearing(heading):
-        pathBearing = currentLeg.vector.absAngle() - heading
+    def getRelBearing(self,heading):
+        pathBearing = self.currentLeg.vector.absAngle() - heading
         if (pathBearing > 180):
             return 360 - pathBearing
         return pathBearing
@@ -64,20 +64,20 @@ class GPSPath(object):
     #see if GPSInfo is near enough to the position at path(time) and see if trackTime
     #Otherwise update trackTime by some factor that represents the nearest position
     #to the path, while also taking into account the distance from the path.
-    def updatePosition(pos,time):
+    def updatePosition(self,pos,time):
         self.pathTime = time
-        currentTime = closestPathTime(pos)
-        current_vec = getVectorTo(pos, pathTime)
-        trackTime = currentTime / (1 + abs(current_vec))
+        currentTime = self.closestPathTime(pos)
+        current_vec = self.getVectorTo(pos, pathTime)
+        self.trackTime = currentTime / (1 + abs(current_vec))
         if (pathTime >= endTime and abs(current_vec) <= self.tol):
-            currentLeg = vectorPath.popLeft()
+            currentLeg = self.vectorPath.popLeft()
 
 
     #return the distance along the path between time and pathTime
-	def pathDistance(time=trackTime):
+	def pathDistance(self,time=trackTime):
 		return (pathTime - time) * abs(currentLeg.vector) / currentLeg.deltaTime
 
-	def speedReq(time=trackTime):
+	def speedReq(self,time=trackTime):
 		return pathDistance() / (currentLeg.deltaTime - pathTime + time)
 
 class Vector(object):

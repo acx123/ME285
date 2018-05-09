@@ -1,7 +1,8 @@
 from gps3 import agps3threaded as gps
-from Queue import Queue,Empty
+from Queue import Queue,Empty,Full
 from collections import namedtuple
-import GPSPath
+from GPSPath import GPSPath as Gpath
+from GPSPath import Vector
 import socket
 import pickle
 import time
@@ -15,7 +16,7 @@ class Controller(object):
     def __init__(self,GPSPath):
         self.running = True
         self.INTERRUPTS = Queue()
-        self.lcd_buffer = Queue(2)
+        self.lcd_buffer = Queue(1)
 
         self.server = threading.Thread(target=self._network,args=[self.INTERRUPTS])
         self.server.daemon = True
@@ -26,8 +27,13 @@ class Controller(object):
         self.mode = 'MANUAL'
         self.motorpins = ('P9_14','P9_16')
         self.accel_pin = ('AIN5')
-        self.fwd_rev = ('P9_25')
-        self.brake = ('P9_27')
+        self.fwd_rev = ('P9_27')
+        self.frswitch = 'P9_23'
+        GPIO.setup(self.fwd_rev,GPIO.OUT)
+        GPIO.setup(self.frswitch,GPIO.IN)
+        GPIO.add_event_detect(self.frswitch,GPIO.BOTH)
+        GPIO.setup('P9_25',GPIO.OUT)
+        GPIO.output('P9_25',GPIO.HIGH)
         self.duty_cycle_range = 49
         ADC.setup()
 
@@ -62,30 +68,38 @@ class Controller(object):
     def manualStep(self,deltaTime):
         userRequested = self.readPot()
         self.setMotorSpeed(userRequested,userRequested)
-        self.lcd_buffer.put(('MANU|DC: {:5}'.format(self.INTERRUPTS),'UAL |freq: {:5}'.format(self._numcalls/self.t0)))
 
     def assistStep(self,deltaTime):
         cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
         if cur_pos[0] == 'N/A' or cur_pos[1] == 'N/A':
-            self.mode = 'MANUAL'
-            break;
-        if prev_pos == None:
-            prev_pos = cur_pos
+            self.changeMode('MANUAL')
+            return;
+        else:
+            cur_pos = (float(cur_pos[0]),float(cur_pos[1]))
+        if self.prev_pos == None:
+            self.prev_pos = cur_pos
         userRequested = self.readPot()
-        cur_acc = adxl.accelData()
-        GPSPath.updatePosition(cur_pos,t0)
-        deviation = GPSPath.pathDeviation(cur_pos)
+        cur_acc = self.adxl.accelData()
+        self.GPSPath.updatePosition(cur_pos,self.t0)
+        deviation = self.GPSPath.pathDeviation(cur_pos)
         dev_dist,dev_angle = self.GPSPath.pathDeviation(cur_pos)
-        pos_vec = GPSPath.Vector(prev_pos,cur_pos)
+        pos_vec = Vector(self.prev_pos,cur_pos)
         heading = pos_vec.absAngle()
+        rel_bear = self.GPSPath.getRelBearing(heading)
         dev_bear = dev_angle - heading
         if abs(dev_bear) > 180:
             dev_bear = 180 + dev_bear * (1 - 2 * (dev_bear > 0))
         gps_vel = abs(pos_vec)/deltaTime
-        adj_max_speed = self.GPSPath.speedReq(time)/(1 + dev_angle*dev_dist*20000 + pos_vec/min(dev_dist,0.3))
+        adj_max_speed = self.GPSPath.speedReq(time)/(1 + dev_bear*dev_dist*20000 + rel_bear/max(dev_dist,0.3))
         adj_max_ds = adj_max_speed*self.conv_const/self.max_speed
         min_ds = min([userRequested,adj_max_ds])
         self.setMotorSpeed(min_ds, min_ds)
+        turn_angle = dev_bear if dev_dist*self.conv_const > 5 else rel_bear
+        line2 = ('Close' if dev_dist*self.conv_const < 5 else 'Far' ,'Right' if dev_bear < 0 else 'Left')
+        try:
+            self.lcd_buffer.put_nowait(('DEV:{:3} |BEA:{:3}'.format(dev_dist,turn_angle),'{:7}|{:7}'.format(line2)))
+        except Full:
+            pass
 
     def PIDStep(self,error,Kp=0.1,Ki=0.1,Kd=0.1):
         pass
@@ -106,7 +120,10 @@ class Controller(object):
 
     def handleInterrupt(self,interrupt):
         cmd,args = interrupt
-        self.INTR_TYPES[cmd](args)
+        try:
+            self.INTR_TYPES[cmd](args)
+        except KeyError:
+            print(cmd)
 
     def changeMode(self,args):
         self.mode = self.MODES[args]
@@ -128,6 +145,9 @@ class Controller(object):
     def run(self):
         self.t0 = time.time()
         while self.running:
+#       if GPIO.event_detected(frswitch):
+#        GPIO.output(fwd_rev,GPIO.input(frswitch))
+
             try:
                 inter = self.INTERRUPTS.get_nowait()
                 self.handleInterrupt(inter)
@@ -170,19 +190,19 @@ class ADXL(object):
         self.ADXL_SENS = 0.004 #mG/LSB
         self.ADXL_OFFSETS = (-4,-3,0)
         self.ADXL_OFFREG = (0x1E,0x1F,0x20)
-        adxl = I2C.get_i2c_device(self.ADXL_DEV,2)
-        adxl.write16(self.ADXL_PWR,0x08)
-        adxl.write16(self.ADXL_FMT,0x08)
+        self.adxl = I2C.get_i2c_device(self.ADXL_DEV,2)
+        self.adxl.write16(self.ADXL_PWR,0x08)
+        self.adxl.write16(self.ADXL_FMT,0x08)
         for reg,offset in zip(self.ADXL_OFFREG,self.ADXL_OFFSETS):
-            adxl.write16(reg,offset)
+            self.adxl.write16(reg,offset)
 
     def calibrateAngles(self):
         pass
 
     def accelData(self):
-        raw_data = adxl.readList(self.ADXL_DAT,self.ADXL_TO_READ)
+        raw_data = self.adxl.readList(self.ADXL_DAT,self.ADXL_TO_READ)
         data = (int(raw_data[1] << 8 | raw_data[0]),int(raw_data[3] << 8 | raw_data[2]),int(raw_data[5] << 8 | raw_data[4]))
-        data = ((data[0] - (data[0] >> 15) * 65536) * ADXL_SENS * 32.2,(data[1] - (data[1] >> 15) * 65536) * ADXL_SENS * 32.2,(data[2] - (data[2] >> 15) * 65536) * ADXL_SENS * 32.2)
+        data = ((data[0] - (data[0] >> 15) * 65536) *self.ADXL_SENS * 32.2,(data[1] - (data[1] >> 15) * 65536) * self.ADXL_SENS * 32.2,(data[2] - (data[2] >> 15) * 65536) * self.ADXL_SENS * 32.2)
         return data
 
 class LCD(threading.Thread):
@@ -258,8 +278,8 @@ class LCD(threading.Thread):
         while True:
             text = self._buff.get()
             self.set_message(text)
-            time.sleep(0.5)
             self._buff.task_done()
+            time.sleep(0.75)
 
     def write4(self,data,mode=0):
         dat_hl = ((data & 0xF0) | mode , ((data << 4) & 0xF0)| mode)
