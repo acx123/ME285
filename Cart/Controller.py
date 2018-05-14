@@ -3,6 +3,7 @@ from Queue import Queue,Empty,Full
 from collections import namedtuple
 from GPSPath import GPSPath as Gpath
 from GPSPath import Vector
+import os
 import socket
 import pickle
 import time
@@ -29,6 +30,7 @@ class Controller(object):
         self.accel_pin = ('AIN5')
         self.fwd_rev = ('P9_27')
         self.frswitch = 'P9_23'
+        os.execv('/bin/bash',('gpsd -n /dev/ttyUSB0'))
         GPIO.setup(self.fwd_rev,GPIO.OUT)
         GPIO.setup(self.frswitch,GPIO.IN)
         GPIO.add_event_detect(self.frswitch,GPIO.BOTH)
@@ -71,11 +73,10 @@ class Controller(object):
 
     def assistStep(self,deltaTime):
         cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
-        if cur_pos[0] == 'N/A' or cur_pos[1] == 'N/A':
-            self.changeMode('MANUAL')
-            return
-        else:
+        try:
             cur_pos = (float(cur_pos[0]),float(cur_pos[1]))
+        except:
+            return
         if self.prev_pos == None:
             self.prev_pos = cur_pos
         userRequested = self.readPot()
@@ -138,7 +139,12 @@ class Controller(object):
         self.t0 = 0
 
     def changePathR(self,args):
-        cur_pos = (self.GPS.data_stream.lat,self.GPS.data_stream.lon)
+        cur_pos = None
+        while cur_pos == None
+            try:
+                cur_pos = (float(self.GPS.data_stream.lat),float(self.GPS.data_stream.lon))
+            except:
+                continue
         self.GPSPath = GPSPath(args,offset=cur_pos)
         self.t0 = 0
 
@@ -175,7 +181,7 @@ class Controller(object):
                 serv.listen(1)
                 cli,cli_addr = serv.accept()
                 serv.listen(0)
-                continue
+                break
             inter.put(pickle.loads(pickled_data))
 
 

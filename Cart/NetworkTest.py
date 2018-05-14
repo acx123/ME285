@@ -1,6 +1,8 @@
 import socket
 import pickle
 import threading
+from GPSPath import GPSPath
+from gps3 import agps3threaded as gps
 from queue import Queue
 
 def changeMode(arg):
@@ -18,9 +20,13 @@ def assistStep(arg):
 def stop(arg):
     pass
 
+def changePathR(self,args):
+    cur_pos = (float(GPS.data_stream.lat),float(GPS.data_stream.lon))
+    GPSPath = GPSPath(args,offset=cur_pos)
+
 INTERRUPTS = Queue()
 MODES = {'MANUAL':manualStep,'ASSIST':assistStep,'STOP':stop}
-INTR_TYPES = {'CM':changeMode,'EXIT':quit}
+INTR_TYPES ={'CM':changeMode,'NEW_PATH_R':changePathR,'EXIT':quit}
 mode = 'MANUAL'
 running = True
 handled = list()
@@ -54,7 +60,6 @@ def _network():
             pickled_data = cli.recv(1024)
             msgcnt = msgcnt + 1
             dat = pickle.loads(pickled_data)
-            cli.sendall(pickle.dumps(((msgcnt,len(handled)),protocol=2))
         except EOFError:
             serv.listen(1)
             cli,cli_addr = serv.accept()
@@ -69,6 +74,9 @@ def handleInterrupt(inter):
         print(Exception)
 
 if __name__ == '__main__':
+    GPS = gps.AGPS3mechanism()
+    GPS.stream_data()
+    GPS.run_thread()
     thread = threading.Thread(target=_network())
     thread.setDaemon(True)
     thread.start()

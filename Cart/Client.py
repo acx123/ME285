@@ -19,7 +19,7 @@ def setpath(command):
     waypoints = list()
     for waypoint in str_points:
         values = waypoint.split(sep=',')
-        waypoints.append([(float(values[0])*ft2pt,float(values[1])*ft2pt),float(values[2])])
+        waypoints.append(((float(values[0])*ft2pt,float(values[1])*ft2pt),float(values[2])))
     return('NEW_PATH_R',waypoints)
 
 def exit(args):
@@ -35,9 +35,9 @@ pattern = '(\d+(?:,\s*\d+)*)'
 ft2pt = 1/364320
 MODES = {'MANUAL':1,'ASSIST':1,'STOP':1}
 if __name__ == '__main__':
-    serv_addr,serv_port = sys.argv[1:3]
-    serv = socket.create_connection((serv_addr,int(serv_port)))
-    print('Connection Established: ',serv_addr)
+    #serv_addr,serv_port = sys.argv[1:3]
+    #serv = socket.create_connection((serv_addr,int(serv_port)))
+    #print('Connection Established: ',serv_addr)
     while running:
         print('>>> ',end='')
         cmd = input().split()
@@ -45,10 +45,8 @@ if __name__ == '__main__':
             cmd_form = CMDS[cmd[0]](cmd[1])
             msg = pickle.dumps(cmd_form,protocol=2)
             print('pickle: ', msg)
-            ret = serv.sendall(msg)
-            print('bits sent: ',ret)
-            recv = serv.recv(1024)
-            print(pickle.loads(recv))
+            #ret = serv.sendall(msg)
+            print('unpickled: ',pickle.loads(msg))
         except ValueError:
             print('Command not found')
         except Exception as excp:
